@@ -45,6 +45,7 @@ class Session:
         self.new_pool = list(new_pool)          # доступные новые слова (dict es/ru/ctx)
         self.new_quota = max(0, new_quota)      # сколько новых ввести в этом прогоне
         self.review_queue = list(review_queue)  # слова к повторению (dict)
+        self.review_lapsed = set()  # es слов, которым лапс (-1 ступень) уже засчитан в этой сессии
 
         self.stage = "new"          # 'new' | 'review' | 'done'
         self.direction = "es_ru"    # фаза A / фаза B
@@ -149,8 +150,20 @@ class Session:
                 self.redo.append(self.current)  # вернётся в этой же сессии
             return self._step_new()
         if self.stage == "review":
-            if self.current is not None:
-                apply_ladder(self.current["es"], knows)
+            es = self.current["es"] if self.current else None
+            if es is not None:
+                if knows:
+                    # первое «помню» — двигаем по лесенке как обычно;
+                    # «помню» после лапса в этой сессии — слово просто дотянуто, лесенку не трогаем
+                    if es not in self.review_lapsed:
+                        apply_ladder(es, True)
+                else:
+                    # «не помню»: лапс (-1 ступень) засчитываем один раз за сессию,
+                    # дальше слово крутится в этой же сессии, пока не дашь «помню»
+                    if es not in self.review_lapsed:
+                        apply_ladder(es, False)
+                        self.review_lapsed.add(es)
+                    self.review_queue.append(self.current)  # вернуть позже в этой сессии
             return self._step_review()
         return {"kind": "finished"}
 
